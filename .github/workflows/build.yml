@@ -26,5 +26,5 @@ jobs:
             - name: Upload a build artifact
               uses: actions/upload-artifact@v3
               with:
-                name: {{ github.sha }}
+                name: idk lbruh
                 path: build/app/build/outputs/apk/*/*.apk
