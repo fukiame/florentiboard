@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "T, Ho" <thanh.hoquang@protonmail.com>
+Date: Thu, 6 Jul 2023 18:32:46 +0700
+Subject: [PATCH] Special case: "gi" + vowel + tone
+
+
+diff --git a/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json b/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json
+index 9ec30ec9..084601fc 100644
+--- a/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json
++++ b/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json
+@@ -57,6 +57,18 @@
+         "ừz": "ư", "ửz": "ư", "ữz": "ư", "ứz": "ư", "ựz": "ư",
+         "ỳz": "y", "ỷz": "y", "ỹz": "y", "ýz": "y", "ỵz": "y",
+ 
++        "gía": "giá", "gìa": "già", "gỉa": "giả", "gĩa": "giã", "gịa": "giạ",
++        "gíă": "giắ", "gìă": "giằ", "gỉă": "giẳ", "gĩă": "giẵ", "gịă": "giặ",
++        "gíâ": "giấ", "gìâ": "giầ", "gỉâ": "giẩ", "gĩẫ": "giẫ", "gịâ": "giậ",
++        "gíe": "gié", "gìe": "giè", "gỉe": "giẻ", "gĩe": "giẽ", "gịe": "giẹ",
++        "gíê": "giế", "gìê": "giề", "gỉê": "giể", "gĩê": "giễ", "gịê": "giệ",
++        "gío": "gió", "gìo": "giò", "gỉo": "giỏ", "gĩo": "giõ", "gịo": "giọ",
++        "gíô": "giố", "gìô": "giồ", "gỉô": "giổ", "gĩô": "giỗ", "gịô": "giộ",
++        "gíơ": "giớ", "gìơ": "giờ", "gỉơ": "giở", "gĩơ": "giỡ", "gịơ": "giợ",
++        "gíu": "giú", "gìu": "giù", "gỉu": "giủ", "gĩu": "giũ", "gịu": "giụ",
++        "gíư": "giứ", "gìư": "giừ", "gỉư": "giử", "gĩư": "giữ", "gịư": "giự",
++
++
+         "acw": "ăc", "amw": "ăm", "anw": "ăn", "apw": "ăp", "atw": "ăt", "angw": "ăng",
+         "aca": "âc", "ama": "âm", "ana": "ân", "apa": "âp", "ata": "ât", "aua": "âu", "aya": "ây", "anga": "âng",
+         "eme": "êm", "ene": "ên", "epe": "êp", "ete": "êt", "enhe": "ênh",
+-- 
+2.41.0
+

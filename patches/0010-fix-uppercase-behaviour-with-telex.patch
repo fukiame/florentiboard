@@ -1,0 +1,29 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Hayleia <7904776+Hayleia@users.noreply.github.com>
+Date: Fri, 14 Jul 2023 12:36:06 +0200
+Subject: [PATCH] fix uppercase behaviour with telex
+
+
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/composing/Composer.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/composing/Composer.kt
+index 43ce8d67..a81fee7a 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/composing/Composer.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/composing/Composer.kt
+@@ -58,8 +58,13 @@ class WithRules(
+         for (key in ruleOrder) {
+             if (str.lowercase().endsWith(key)) {
+                 val value = rules.getValue(key)
+-                val firstOfKey = str.takeLast(key.length).take(1)
+-                return (key.length - 1) to (if (firstOfKey.uppercase() == firstOfKey) value.uppercase() else value)
++                val matchingPart = str.takeLast(key.length) // the part of the string that matches the key
++                val firstOfKey = matchingPart.take(1)
++                return (key.length - 1) to when {
++                    matchingPart.uppercase() == matchingPart -> value.uppercase()
++                    firstOfKey.uppercase() == firstOfKey -> value.replaceFirstChar(Char::titlecase)
++                    else -> value
++                }
+             }
+         }
+         return 0 to toInsert
+-- 
+2.41.0
+

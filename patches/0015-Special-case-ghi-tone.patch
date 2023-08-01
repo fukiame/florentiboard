@@ -1,0 +1,26 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: "T, Ho" <thanh.hoquang@protonmail.com>
+Date: Thu, 6 Jul 2023 18:41:33 +0700
+Subject: [PATCH] =?UTF-8?q?Special=20case:=20"ghi"=20+=20tone=20+=20"?=
+ =?UTF-8?q?=C3=AA"?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+
+diff --git a/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json b/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json
+index 084601fc..3ba96b58 100644
+--- a/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json
++++ b/app/src/main/assets/ime/keyboard/org.florisboard.composers/extension.json
+@@ -68,6 +68,8 @@
+         "gíu": "giú", "gìu": "giù", "gỉu": "giủ", "gĩu": "giũ", "gịu": "giụ",
+         "gíư": "giứ", "gìư": "giừ", "gỉư": "giử", "gĩư": "giữ", "gịư": "giự",
+ 
++        "ghíê": "ghiế", "ghìê": "ghiề", "ghỉê": "ghiể", "ghĩê": "ghiễ", "ghịê": "ghiệ",
++
+ 
+         "acw": "ăc", "amw": "ăm", "anw": "ăn", "apw": "ăp", "atw": "ăt", "angw": "ăng",
+         "aca": "âc", "ama": "âm", "ana": "ân", "apa": "âp", "ata": "ât", "aua": "âu", "aya": "ây", "anga": "âng",
+-- 
+2.41.0
+

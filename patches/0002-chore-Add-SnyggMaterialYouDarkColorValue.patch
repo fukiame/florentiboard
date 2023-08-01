@@ -1,0 +1,46 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 1fexd <PGFvy85nC@protonmail.com>
+Date: Wed, 10 May 2023 20:22:45 +0200
+Subject: [PATCH] chore: Add SnyggMaterialYouDarkColorValue
+
+
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt
+index 973d4b42..b0fb4f4e 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt
+@@ -24,6 +24,7 @@ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCircleShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCutCornerDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCutCornerPercentShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDpSizeValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouDarkColorValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouLightColorValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRectangleShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRoundedCornerDpShapeValue
+@@ -35,21 +36,21 @@ fun SnyggPropertySetSpecBuilder.background() {
+     property(
+         name = Snygg.Background,
+         level = SnyggLevel.BASIC,
+-        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue),
++        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue, SnyggMaterialYouDarkColorValue),
+     )
+ }
+ fun SnyggPropertySetSpecBuilder.foreground() {
+     property(
+         name = Snygg.Foreground,
+         level = SnyggLevel.BASIC,
+-        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue),
++        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue, SnyggMaterialYouDarkColorValue),
+     )
+ }
+ fun SnyggPropertySetSpecBuilder.border() {
+     property(
+         name = Snygg.BorderColor,
+         level = SnyggLevel.ADVANCED,
+-        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue),
++        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue, SnyggMaterialYouDarkColorValue),
+     )
+     property(
+         name = Snygg.BorderWidth,
+-- 
+2.41.0
+

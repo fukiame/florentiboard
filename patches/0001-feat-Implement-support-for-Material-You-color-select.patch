@@ -1,0 +1,1892 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: 1fexd <PGFvy85nC@protonmail.com>
+Date: Wed, 10 May 2023 19:59:11 +0200
+Subject: [PATCH] feat: Implement support for Material You color selection in
+ theme editor
+
+
+diff --git a/app/build.gradle.kts b/app/build.gradle.kts
+index 61fc1b78..7e307309 100644
+--- a/app/build.gradle.kts
++++ b/app/build.gradle.kts
+@@ -206,6 +206,7 @@ dependencies {
+     implementation(libs.androidx.autofill)
+     implementation(libs.androidx.collection.ktx)
+     implementation(libs.androidx.compose.material)
++    implementation(libs.androidx.compose.material3)
+     implementation(libs.androidx.compose.runtime.livedata)
+     implementation(libs.androidx.compose.ui)
+     implementation(libs.androidx.compose.ui.tooling.preview)
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/FlorisImeService.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/FlorisImeService.kt
+index afc3bc48..5bdae4c9 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/FlorisImeService.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/FlorisImeService.kt
+@@ -64,6 +64,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
+ import androidx.compose.ui.platform.AbstractComposeView
+ import androidx.compose.ui.platform.ComposeView
+ import androidx.compose.ui.platform.LocalConfiguration
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.platform.LocalLayoutDirection
+ import androidx.compose.ui.unit.IntSize
+ import androidx.compose.ui.unit.LayoutDirection
+@@ -705,6 +706,7 @@ class FlorisImeService : LifecycleInputMethodService() {
+ 
+         @Composable
+         fun Content() {
++            val context = LocalContext.current
+             ProvideLocalizedResources(resourcesContext, forceLayoutDirection = LayoutDirection.Ltr) {
+                 FlorisImeTheme {
+                     val layoutStyle = FlorisImeTheme.style.get(FlorisImeUi.ExtractedLandscapeInputLayout)
+@@ -713,21 +715,21 @@ class FlorisImeService : LifecycleInputMethodService() {
+                     val activeEditorInfo by editorInstance.activeInfoFlow.collectAsState()
+                     Box(
+                         modifier = Modifier
+-                            .snyggBackground(layoutStyle, FlorisImeTheme.fallbackSurfaceColor()),
++                            .snyggBackground(context, layoutStyle, FlorisImeTheme.fallbackSurfaceColor()),
+                     ) {
+                         Row(
+                             modifier = Modifier.fillMaxSize(),
+                             verticalAlignment = Alignment.CenterVertically,
+                         ) {
+-                            val fieldColor = fieldStyle.foreground.solidColor(FlorisImeTheme.fallbackContentColor())
++                            val fieldColor = fieldStyle.foreground.solidColor(context, FlorisImeTheme.fallbackContentColor())
+                             AndroidView(
+                                 modifier = Modifier
+                                     .padding(8.dp)
+                                     .fillMaxHeight()
+                                     .weight(1f)
+                                     .snyggShadow(fieldStyle)
+-                                    .snyggBorder(fieldStyle)
+-                                    .snyggBackground(fieldStyle),
++                                    .snyggBorder(context, fieldStyle)
++                                    .snyggBackground(context, fieldStyle),
+                                 factory = { extractEditText },
+                                 update = { view ->
+                                     view.background = null
+@@ -755,8 +757,8 @@ class FlorisImeService : LifecycleInputMethodService() {
+                                     ?: "ACTION",
+                                 shape = actionStyle.shape.shape(),
+                                 colors = ButtonDefaults.buttonColors(
+-                                    backgroundColor = actionStyle.background.solidColor(FlorisImeTheme.fallbackContentColor()),
+-                                    contentColor = actionStyle.foreground.solidColor(FlorisImeTheme.fallbackSurfaceColor()),
++                                    backgroundColor = actionStyle.background.solidColor(context, FlorisImeTheme.fallbackContentColor()),
++                                    contentColor = actionStyle.foreground.solidColor(context, FlorisImeTheme.fallbackSurfaceColor()),
+                                 ),
+                             )
+                         }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/EditPropertyDialog.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/EditPropertyDialog.kt
+index 8f05b670..739364b8 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/EditPropertyDialog.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/EditPropertyDialog.kt
+@@ -72,12 +72,16 @@ import dev.patrickgold.florisboard.lib.kotlin.toStringWithoutDotZero
+ import dev.patrickgold.florisboard.lib.rememberValidationResult
+ import dev.patrickgold.florisboard.lib.snygg.SnyggLevel
+ import dev.patrickgold.florisboard.lib.snygg.SnyggPropertySetSpec
++import dev.patrickgold.florisboard.lib.snygg.value.MaterialYouColor
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCutCornerDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCutCornerPercentShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDefinedVarValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDpSizeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggImplicitInheritValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouDarkColorValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouLightColorValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggPercentShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRoundedCornerDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRoundedCornerPercentShapeValue
+@@ -111,12 +115,14 @@ private enum class ShapeCorner {
+ 
+     @Composable
+     fun label(): String {
+-        return stringRes(when (this) {
+-            TOP_START -> R.string.enum__shape_corner__top_start
+-            TOP_END -> R.string.enum__shape_corner__top_end
+-            BOTTOM_END -> R.string.enum__shape_corner__bottom_end
+-            BOTTOM_START -> R.string.enum__shape_corner__bottom_start
+-        })
++        return stringRes(
++            when (this) {
++                TOP_START -> R.string.enum__shape_corner__top_start
++                TOP_END -> R.string.enum__shape_corner__top_end
++                BOTTOM_END -> R.string.enum__shape_corner__bottom_end
++                BOTTOM_START -> R.string.enum__shape_corner__bottom_start
++            }
++        )
+     }
+ }
+ 
+@@ -136,22 +142,32 @@ internal fun EditPropertyDialog(
+     var showAlreadyExistsError by rememberSaveable { mutableStateOf(false) }
+ 
+     var propertyName by rememberSaveable {
+-        mutableStateOf(if (isAddPropertyDialog && propertySetSpec == null) { "" } else { initProperty.name })
++        mutableStateOf(
++            if (isAddPropertyDialog && propertySetSpec == null) {
++                ""
++            } else {
++                initProperty.name
++            }
++        )
+     }
+     val propertyNameValidation = rememberValidationResult(ExtensionValidation.ThemeComponentVariableName, propertyName)
+     var propertyValueEncoder by remember {
+-        mutableStateOf(if (isAddPropertyDialog && propertySetSpec == null) {
+-            SnyggImplicitInheritValue
+-        } else {
+-            initProperty.value.encoder()
+-        })
++        mutableStateOf(
++            if (isAddPropertyDialog && propertySetSpec == null) {
++                SnyggImplicitInheritValue
++            } else {
++                initProperty.value.encoder()
++            }
++        )
+     }
+     var propertyValue by remember {
+-        mutableStateOf(if (isAddPropertyDialog && propertySetSpec == null) {
+-            SnyggImplicitInheritValue
+-        } else {
+-            initProperty.value
+-        })
++        mutableStateOf(
++            if (isAddPropertyDialog && propertySetSpec == null) {
++                SnyggImplicitInheritValue
++            } else {
++                initProperty.value
++            }
++        )
+     }
+ 
+     fun isPropertyNameValid(): Boolean {
+@@ -168,16 +184,20 @@ internal fun EditPropertyDialog(
+     }
+ 
+     JetPrefAlertDialog(
+-        title = stringRes(if (isAddPropertyDialog) {
+-            R.string.settings__theme_editor__add_property
+-        } else {
+-            R.string.settings__theme_editor__edit_property
+-        }),
+-        confirmLabel = stringRes(if (isAddPropertyDialog) {
+-            R.string.action__add
+-        } else {
+-            R.string.action__apply
+-        }),
++        title = stringRes(
++            if (isAddPropertyDialog) {
++                R.string.settings__theme_editor__add_property
++            } else {
++                R.string.settings__theme_editor__edit_property
++            }
++        ),
++        confirmLabel = stringRes(
++            if (isAddPropertyDialog) {
++                R.string.action__add
++            } else {
++                R.string.action__apply
++            }
++        ),
+         onConfirm = {
+             if (!isPropertyNameValid() || !isPropertyValueValid()) {
+                 showSelectAsError = true
+@@ -189,7 +209,11 @@ internal fun EditPropertyDialog(
+         },
+         dismissLabel = stringRes(R.string.action__cancel),
+         onDismiss = onDismiss,
+-        neutralLabel = if (!isAddPropertyDialog) { stringRes(R.string.action__delete) } else { null },
++        neutralLabel = if (!isAddPropertyDialog) {
++            stringRes(R.string.action__delete)
++        } else {
++            null
++        },
+         onNeutral = onDelete,
+         neutralColors = ButtonDefaults.textButtonColors(
+             contentColor = MaterialTheme.colors.error,
+@@ -369,6 +393,7 @@ private fun PropertyValueEditor(
+                 )
+             }
+         }
++
+         is SnyggSolidColorValue -> {
+             val colorPickerState = rememberJetPrefColorPickerState(initColor = value.color)
+             val colorPickerStr = translatePropertyValue(value, level, displayColorsAs)
+@@ -455,7 +480,7 @@ private fun PropertyValueEditor(
+                         }
+                         FlorisOutlinedTextField(
+                             value = colorStr,
+-                            onValueChange =  { colorStr = it },
++                            onValueChange = { colorStr = it },
+                             showValidationError = showValidationErrors,
+                             validationResult = colorStrValidation,
+                         )
+@@ -463,6 +488,7 @@ private fun PropertyValueEditor(
+                 }
+             }
+         }
++
+         is SnyggDpSizeValue -> {
+             var sizeStr by remember {
+                 val dp = value.dp.takeUnless { it.isUnspecified } ?: SnyggDpSizeValue.defaultValue().dp
+@@ -489,6 +515,48 @@ private fun PropertyValueEditor(
+                 )
+             }
+         }
++
++        is SnyggMaterialYouValue -> {
++            val onSelectItem: (Int) -> Unit = when (value) {
++                is SnyggMaterialYouDarkColorValue -> { index ->
++                    onValueChange(SnyggMaterialYouDarkColorValue(MaterialYouColor.colorNames[index]))
++                }
++
++                is SnyggMaterialYouLightColorValue -> { index ->
++                    onValueChange(SnyggMaterialYouLightColorValue(MaterialYouColor.colorNames[index]))
++                }
++            }
++
++            val selectedIndex by remember(value.colorName) {
++                mutableStateOf(
++                    MaterialYouColor.colorNames.indexOf(value.colorName).coerceIn(MaterialYouColor.colorNames.indices)
++                )
++            }
++            var expanded by remember { mutableStateOf(false) }
++            Row(
++                modifier = Modifier.padding(top = 8.dp),
++                verticalAlignment = Alignment.CenterVertically,
++            ) {
++                FlorisDropdownMenu(
++                    modifier = Modifier
++                        .padding(end = 12.dp)
++                        .weight(1f),
++                    items = MaterialYouColor.colorNames,
++                    labelProvider = { translatePropertyName(it, level) },
++                    expanded = expanded,
++                    selectedIndex = selectedIndex,
++                    isError = isError,
++                    onSelectItem = onSelectItem,
++                    onExpandRequest = { expanded = true },
++                    onDismissRequest = { expanded = false },
++                )
++                SnyggValueIcon(
++                    value = value,
++                    definedVariables = definedVariables,
++                )
++            }
++        }
++
+         is SnyggSpSizeValue -> {
+             var sizeStr by remember {
+                 val sp = value.sp.takeUnless { it.isUnspecified } ?: SnyggSpSizeValue.defaultValue().sp
+@@ -515,6 +583,7 @@ private fun PropertyValueEditor(
+                 )
+             }
+         }
++
+         is SnyggShapeValue -> when (value) {
+             is SnyggDpShapeValue -> {
+                 var showDialogInitDp by rememberSaveable(stateSaver = DpSizeSaver) {
+@@ -524,48 +593,60 @@ private fun PropertyValueEditor(
+                     mutableStateOf<ShapeCorner?>(null)
+                 }
+                 var topStart by rememberSaveable(stateSaver = DpSizeSaver) {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerDpShapeValue -> value.topStart
+-                        is SnyggRoundedCornerDpShapeValue -> value.topStart
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerDpShapeValue -> value.topStart
++                            is SnyggRoundedCornerDpShapeValue -> value.topStart
++                        }
++                    )
+                 }
+                 var topEnd by rememberSaveable(stateSaver = DpSizeSaver) {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerDpShapeValue -> value.topEnd
+-                        is SnyggRoundedCornerDpShapeValue -> value.topEnd
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerDpShapeValue -> value.topEnd
++                            is SnyggRoundedCornerDpShapeValue -> value.topEnd
++                        }
++                    )
+                 }
+                 var bottomEnd by rememberSaveable(stateSaver = DpSizeSaver) {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerDpShapeValue -> value.bottomEnd
+-                        is SnyggRoundedCornerDpShapeValue -> value.bottomEnd
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerDpShapeValue -> value.bottomEnd
++                            is SnyggRoundedCornerDpShapeValue -> value.bottomEnd
++                        }
++                    )
+                 }
+                 var bottomStart by rememberSaveable(stateSaver = DpSizeSaver) {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerDpShapeValue -> value.bottomStart
+-                        is SnyggRoundedCornerDpShapeValue -> value.bottomStart
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerDpShapeValue -> value.bottomStart
++                            is SnyggRoundedCornerDpShapeValue -> value.bottomStart
++                        }
++                    )
+                 }
+                 val shape = remember(topStart, topEnd, bottomEnd, bottomStart) {
+                     when (value) {
+                         is SnyggCutCornerDpShapeValue -> {
+                             CutCornerShape(topStart, topEnd, bottomEnd, bottomStart)
+                         }
++
+                         is SnyggRoundedCornerDpShapeValue -> {
+                             RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart)
+                         }
+                     }
+                 }
+                 LaunchedEffect(shape) {
+-                    onValueChange(when (value) {
+-                        is SnyggCutCornerDpShapeValue -> {
+-                            SnyggCutCornerDpShapeValue(topStart, topEnd, bottomEnd, bottomStart)
+-                        }
+-                        is SnyggRoundedCornerDpShapeValue -> {
+-                            SnyggRoundedCornerDpShapeValue(topStart, topEnd, bottomEnd, bottomStart)
++                    onValueChange(
++                        when (value) {
++                            is SnyggCutCornerDpShapeValue -> {
++                                SnyggCutCornerDpShapeValue(topStart, topEnd, bottomEnd, bottomStart)
++                            }
++
++                            is SnyggRoundedCornerDpShapeValue -> {
++                                SnyggRoundedCornerDpShapeValue(topStart, topEnd, bottomEnd, bottomStart)
++                            }
+                         }
+-                    })
++                    )
+                 }
+                 Row(
+                     modifier = Modifier
+@@ -672,6 +753,7 @@ private fun PropertyValueEditor(
+                     }
+                 }
+             }
++
+             is SnyggPercentShapeValue -> {
+                 var showDialogInitPercentage by rememberSaveable {
+                     mutableStateOf(0)
+@@ -680,48 +762,60 @@ private fun PropertyValueEditor(
+                     mutableStateOf<ShapeCorner?>(null)
+                 }
+                 var topStart by rememberSaveable {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerPercentShapeValue -> value.topStart
+-                        is SnyggRoundedCornerPercentShapeValue -> value.topStart
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerPercentShapeValue -> value.topStart
++                            is SnyggRoundedCornerPercentShapeValue -> value.topStart
++                        }
++                    )
+                 }
+                 var topEnd by rememberSaveable {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerPercentShapeValue -> value.topEnd
+-                        is SnyggRoundedCornerPercentShapeValue -> value.topEnd
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerPercentShapeValue -> value.topEnd
++                            is SnyggRoundedCornerPercentShapeValue -> value.topEnd
++                        }
++                    )
+                 }
+                 var bottomEnd by rememberSaveable {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerPercentShapeValue -> value.bottomEnd
+-                        is SnyggRoundedCornerPercentShapeValue -> value.bottomEnd
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerPercentShapeValue -> value.bottomEnd
++                            is SnyggRoundedCornerPercentShapeValue -> value.bottomEnd
++                        }
++                    )
+                 }
+                 var bottomStart by rememberSaveable {
+-                    mutableStateOf(when (value) {
+-                        is SnyggCutCornerPercentShapeValue -> value.bottomStart
+-                        is SnyggRoundedCornerPercentShapeValue -> value.bottomStart
+-                    })
++                    mutableStateOf(
++                        when (value) {
++                            is SnyggCutCornerPercentShapeValue -> value.bottomStart
++                            is SnyggRoundedCornerPercentShapeValue -> value.bottomStart
++                        }
++                    )
+                 }
+                 val shape = remember(topStart, topEnd, bottomEnd, bottomStart) {
+                     when (value) {
+                         is SnyggCutCornerPercentShapeValue -> {
+                             CutCornerShape(topStart, topEnd, bottomEnd, bottomStart)
+                         }
++
+                         is SnyggRoundedCornerPercentShapeValue -> {
+                             RoundedCornerShape(topStart, topEnd, bottomEnd, bottomStart)
+                         }
+                     }
+                 }
+                 LaunchedEffect(shape) {
+-                    onValueChange(when (value) {
+-                        is SnyggCutCornerPercentShapeValue -> {
+-                            SnyggCutCornerPercentShapeValue(topStart, topEnd, bottomEnd, bottomStart)
+-                        }
+-                        is SnyggRoundedCornerPercentShapeValue -> {
+-                            SnyggRoundedCornerPercentShapeValue(topStart, topEnd, bottomEnd, bottomStart)
++                    onValueChange(
++                        when (value) {
++                            is SnyggCutCornerPercentShapeValue -> {
++                                SnyggCutCornerPercentShapeValue(topStart, topEnd, bottomEnd, bottomStart)
++                            }
++
++                            is SnyggRoundedCornerPercentShapeValue -> {
++                                SnyggRoundedCornerPercentShapeValue(topStart, topEnd, bottomEnd, bottomStart)
++                            }
+                         }
+-                    })
++                    )
+                 }
+                 Row(
+                     modifier = Modifier
+@@ -792,7 +886,7 @@ private fun PropertyValueEditor(
+                                     ShapeCorner.TOP_END -> topEnd = sizePercentage
+                                     ShapeCorner.BOTTOM_END -> bottomEnd = sizePercentage
+                                     ShapeCorner.BOTTOM_START -> bottomStart = sizePercentage
+-                                    else -> { }
++                                    else -> {}
+                                 }
+                                 showDialogForCorner = null
+                             }
+@@ -829,6 +923,7 @@ private fun PropertyValueEditor(
+                     }
+                 }
+             }
++
+             else -> {
+                 Row(
+                     modifier = Modifier
+@@ -844,6 +939,7 @@ private fun PropertyValueEditor(
+                 }
+             }
+         }
++
+         else -> {
+             // Render nothing
+         }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/SnyggValueIcon.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/SnyggValueIcon.kt
+index 6acfeee0..c1044ec4 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/SnyggValueIcon.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/SnyggValueIcon.kt
+@@ -30,7 +30,9 @@ import androidx.compose.material.MaterialTheme
+ import androidx.compose.material.Surface
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.Shape
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.res.painterResource
+ import androidx.compose.ui.unit.Dp
+ import androidx.compose.ui.unit.dp
+@@ -38,6 +40,8 @@ import dev.patrickgold.florisboard.R
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCutCornerDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDefinedVarValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDpSizeValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouLightColorValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRoundedCornerDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggSolidColorValue
+@@ -83,20 +87,13 @@ internal fun SnyggValueIcon(
+ ) {
+     when (value) {
+         is SnyggSolidColorValue -> {
+-            Surface(
+-                modifier = modifier.requiredSize(spec.iconSize),
+-                color = MaterialTheme.colors.background,
+-                elevation = spec.elevation,
+-                shape = spec.boxShape,
+-            ) {
+-                Box(
+-                    modifier = Modifier
+-                        .fillMaxSize()
+-                        .checkeredBackground(gridSize = spec.gridSize)
+-                        .background(value.color),
+-                )
+-            }
++            SnyggValueColorBox(modifier = modifier, spec = spec, backgroundColor = value.color)
+         }
++
++        is SnyggMaterialYouValue -> {
++            SnyggValueColorBox(modifier = modifier, spec = spec, backgroundColor = value.loadColor(LocalContext.current))
++        }
++
+         is SnyggShapeValue -> {
+             Box(
+                 modifier = modifier
+@@ -158,6 +155,27 @@ internal fun SnyggValueIcon(
+     }
+ }
+ 
++@Composable
++internal fun SnyggValueColorBox(
++    modifier: Modifier,
++    spec: SnyggValueIcon.Spec,
++    backgroundColor: Color
++) {
++    Surface(
++        modifier = modifier.requiredSize(spec.iconSize),
++        color = MaterialTheme.colors.background,
++        elevation = spec.elevation,
++        shape = spec.boxShape,
++    ) {
++        Box(
++            modifier = Modifier
++                .fillMaxSize()
++                .checkeredBackground(gridSize = spec.gridSize)
++                .background(backgroundColor),
++        )
++    }
++}
++
+ private const val UpscaleFactor = 3
+ private const val UpscaleMaxAbsoluteValue = 100
+ 
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/ThemeTranslations.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/ThemeTranslations.kt
+index 49593419..46260f9c 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/ThemeTranslations.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/app/settings/theme/ThemeTranslations.kt
+@@ -18,6 +18,8 @@ package dev.patrickgold.florisboard.app.settings.theme
+ 
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.remember
++import androidx.compose.ui.graphics.Color
++import androidx.compose.ui.platform.LocalContext
+ import dev.patrickgold.florisboard.R
+ import dev.patrickgold.florisboard.ime.theme.FlorisImeUi
+ import dev.patrickgold.florisboard.lib.UnicodeCtrlChar
+@@ -33,6 +35,9 @@ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDefinedVarValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDpSizeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggExplicitInheritValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggImplicitInheritValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouDarkColorValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouLightColorValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggPercentageSizeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRectangleShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRoundedCornerDpShapeValue
+@@ -155,33 +160,13 @@ internal fun translatePropertyValue(
+     level: SnyggLevel,
+     displayColorsAs: DisplayColorsAs,
+ ): String {
++    val context = LocalContext.current
+     return when (propertyValue) {
+         is SnyggSolidColorValue -> remember(propertyValue.color, displayColorsAs) {
+-            val color = propertyValue.color
+-            when (displayColorsAs) {
+-                DisplayColorsAs.HEX8 -> buildString {
+-                    append(UnicodeCtrlChar.LeftToRightIsolate)
+-                    append("#")
+-                    append((color.red * RgbaColor.RedMax).roundToInt().toString(16).padStart(2, '0'))
+-                    append((color.green * RgbaColor.GreenMax).roundToInt().toString(16).padStart(2, '0'))
+-                    append((color.blue * RgbaColor.BlueMax).roundToInt().toString(16).padStart(2, '0'))
+-                    append((color.alpha * 0xFF).roundToInt().toString(16).padStart(2, '0'))
+-                    append(UnicodeCtrlChar.PopDirectionalIsolate)
+-                }
+-                DisplayColorsAs.RGBA -> buildString {
+-                    append(UnicodeCtrlChar.LeftToRightIsolate)
+-                    append("rgba(")
+-                    append((color.red * RgbaColor.RedMax).roundToInt())
+-                    append(",")
+-                    append((color.green * RgbaColor.GreenMax).roundToInt())
+-                    append(",")
+-                    append((color.blue * RgbaColor.BlueMax).roundToInt())
+-                    append(",")
+-                    append(color.alpha)
+-                    append(")")
+-                    append(UnicodeCtrlChar.PopDirectionalIsolate)
+-                }
+-            }
++            buildColorString(propertyValue.color, displayColorsAs)
++        }
++        is SnyggMaterialYouValue -> remember(propertyValue.colorName, displayColorsAs) {
++            buildColorString(propertyValue.loadColor(context), displayColorsAs)
+         }
+         else -> when (level) {
+             SnyggLevel.DEVELOPER -> null
+@@ -197,12 +182,41 @@ internal fun translatePropertyValue(
+     }
+ }
+ 
++internal fun buildColorString(color: Color, displayColorsAs: DisplayColorsAs): String {
++    return when (displayColorsAs) {
++        DisplayColorsAs.HEX8 -> buildString {
++            append(UnicodeCtrlChar.LeftToRightIsolate)
++            append("#")
++            append((color.red * RgbaColor.RedMax).roundToInt().toString(16).padStart(2, '0'))
++            append((color.green * RgbaColor.GreenMax).roundToInt().toString(16).padStart(2, '0'))
++            append((color.blue * RgbaColor.BlueMax).roundToInt().toString(16).padStart(2, '0'))
++            append((color.alpha * 0xFF).roundToInt().toString(16).padStart(2, '0'))
++            append(UnicodeCtrlChar.PopDirectionalIsolate)
++        }
++        DisplayColorsAs.RGBA -> buildString {
++            append(UnicodeCtrlChar.LeftToRightIsolate)
++            append("rgba(")
++            append((color.red * RgbaColor.RedMax).roundToInt())
++            append(",")
++            append((color.green * RgbaColor.GreenMax).roundToInt())
++            append(",")
++            append((color.blue * RgbaColor.BlueMax).roundToInt())
++            append(",")
++            append(color.alpha)
++            append(")")
++            append(UnicodeCtrlChar.PopDirectionalIsolate)
++        }
++    }
++}
++
+ @Composable
+ internal fun translatePropertyValueEncoderName(encoder: SnyggValueEncoder): String {
+     return when (encoder) {
+         SnyggImplicitInheritValue -> R.string.general__select_dropdown_value_placeholder
+         SnyggExplicitInheritValue -> R.string.snygg__property_value__explicit_inherit
+         SnyggSolidColorValue -> R.string.snygg__property_value__solid_color
++        SnyggMaterialYouLightColorValue -> R.string.snygg__property_value__material_you_light_color
++        SnyggMaterialYouDarkColorValue -> R.string.snygg__property_value__material_you_dark_color
+         SnyggRectangleShapeValue -> R.string.snygg__property_value__rectangle_shape
+         SnyggCircleShapeValue -> R.string.snygg__property_value__circle_shape
+         SnyggCutCornerDpShapeValue -> R.string.snygg__property_value__cut_corner_shape_dp
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/clipboard/ClipboardInputLayout.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/clipboard/ClipboardInputLayout.kt
+index c39cc5d2..7b10039a 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/clipboard/ClipboardInputLayout.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/clipboard/ClipboardInputLayout.kt
+@@ -146,19 +146,19 @@ fun ClipboardInputLayout(
+             modifier = Modifier
+                 .fillMaxWidth()
+                 .height(FlorisImeSizing.smartbarHeight)
+-                .snyggBackground(headerStyle),
++                .snyggBackground(context, headerStyle),
+             verticalAlignment = Alignment.CenterVertically,
+         ) {
+             FlorisIconButtonWithInnerPadding(
+                 onClick = { keyboardManager.activeState.imeUiMode = ImeUiMode.TEXT },
+                 modifier = Modifier.autoMirrorForRtl(),
+                 icon = painterResource(R.drawable.ic_arrow_back),
+-                iconColor = headerStyle.foreground.solidColor(),
++                iconColor = headerStyle.foreground.solidColor(context),
+             )
+             Text(
+                 modifier = Modifier.weight(1f),
+                 text = stringRes(R.string.clipboard__header_title),
+-                color = headerStyle.foreground.solidColor(),
++                color = headerStyle.foreground.solidColor(context),
+                 fontSize = headerStyle.fontSize.spSize(),
+             )
+             FlorisIconButtonWithInnerPadding(
+@@ -169,14 +169,14 @@ fun ClipboardInputLayout(
+                 } else {
+                     R.drawable.ic_toggle_off
+                 }),
+-                iconColor = headerStyle.foreground.solidColor(),
++                iconColor = headerStyle.foreground.solidColor(context),
+                 enabled = !deviceLocked && !isPopupSurfaceActive(),
+             )
+             FlorisIconButtonWithInnerPadding(
+                 onClick = { showClearAllHistory = true },
+                 modifier = Modifier.autoMirrorForRtl(),
+                 icon = painterResource(R.drawable.ic_clear_all),
+-                iconColor = headerStyle.foreground.solidColor(),
++                iconColor = headerStyle.foreground.solidColor(context),
+                 enabled = !deviceLocked && historyEnabled && history.all.isNotEmpty() && !isPopupSurfaceActive(),
+             )
+             FlorisIconButtonWithInnerPadding(
+@@ -184,7 +184,7 @@ fun ClipboardInputLayout(
+                     context.showShortToast("TODO: implement inline clip item editing")
+                 },
+                 icon = painterResource(R.drawable.ic_edit),
+-                iconColor = headerStyle.foreground.solidColor(),
++                iconColor = headerStyle.foreground.solidColor(context),
+                 enabled = !deviceLocked && historyEnabled && !isPopupSurfaceActive(),
+             )
+         }
+@@ -303,7 +303,7 @@ fun ClipboardInputLayout(
+                             .padding(ItemPadding),
+                         text = text,
+                         style = TextStyle(textDirection = TextDirection.ContentOrLtr),
+-                        color = style.foreground.solidColor(),
++                        color = style.foreground.solidColor(context),
+                         fontSize = style.fontSize.spSize(),
+                         maxLines = if (contentScrollInsteadOfClip) Int.MAX_VALUE else 5,
+                         overflow = TextOverflow.Ellipsis,
+@@ -383,8 +383,8 @@ fun ClipboardInputLayout(
+                         modifier = Modifier
+                             .padding(ItemMargin)
+                             .snyggShadow(popupStyle)
+-                            .snyggBorder(popupStyle)
+-                            .snyggBackground(popupStyle)
++                            .snyggBorder(context, popupStyle)
++                            .snyggBackground(context, popupStyle)
+                             .snyggClip(popupStyle),
+                     ) {
+                         PopupAction(
+@@ -437,8 +437,8 @@ fun ClipboardInputLayout(
+                         modifier = Modifier
+                             .width(DialogWidth)
+                             .snyggShadow(popupStyle)
+-                            .snyggBorder(popupStyle)
+-                            .snyggBackground(popupStyle)
++                            .snyggBorder(context, popupStyle)
++                            .snyggBackground(context, popupStyle)
+                             .snyggClip(popupStyle)
+                             .pointerInput(Unit) {
+                                 detectTapGestures { /* Do nothing */ }
+@@ -447,7 +447,7 @@ fun ClipboardInputLayout(
+                         Text(
+                             modifier = Modifier.padding(all = 16.dp),
+                             text = stringRes(R.string.clipboard__confirm_clear_history__message),
+-                            color = popupStyle.foreground.solidColor(),
++                            color = popupStyle.foreground.solidColor(context),
+                         )
+                         Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                             Spacer(modifier = Modifier.weight(1f))
+@@ -457,7 +457,7 @@ fun ClipboardInputLayout(
+                                 },
+                                 modifier = Modifier.padding(end = 8.dp),
+                                 text = stringRes(R.string.action__no),
+-                                colors = ButtonDefaults.textButtonColors(contentColor = popupStyle.foreground.solidColor()),
++                                colors = ButtonDefaults.textButtonColors(contentColor = popupStyle.foreground.solidColor(context)),
+                             )
+                             FlorisTextButton(
+                                 onClick = {
+@@ -466,7 +466,7 @@ fun ClipboardInputLayout(
+                                     showClearAllHistory = false
+                                 },
+                                 text = stringRes(R.string.action__yes),
+-                                colors = ButtonDefaults.textButtonColors(contentColor = popupStyle.foreground.solidColor()),
++                                colors = ButtonDefaults.textButtonColors(contentColor = popupStyle.foreground.solidColor(context)),
+                             )
+                         }
+                     }
+@@ -487,13 +487,13 @@ fun ClipboardInputLayout(
+             Text(
+                 modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
+                 text = stringRes(R.string.clipboard__empty__title),
+-                color = itemStyle.foreground.solidColor(),
++                color = itemStyle.foreground.solidColor(context),
+                 fontSize = itemStyle.fontSize.spSize() safeTimes 1.1f,
+                 fontWeight = FontWeight.Bold,
+             )
+             Text(
+                 text = stringRes(R.string.clipboard__empty__message),
+-                color = itemStyle.foreground.solidColor(),
++                color = itemStyle.foreground.solidColor(context),
+                 fontSize = itemStyle.fontSize.spSize(),
+                 textAlign = TextAlign.Center,
+             )
+@@ -521,13 +521,13 @@ fun ClipboardInputLayout(
+                     Text(
+                         modifier = Modifier.padding(bottom = 8.dp),
+                         text = stringRes(R.string.clipboard__disabled__title),
+-                        color = itemStyle.foreground.solidColor(),
++                        color = itemStyle.foreground.solidColor(context),
+                         fontSize = itemStyle.fontSize.spSize() safeTimes 1.1f,
+                         fontWeight = FontWeight.Bold,
+                     )
+                     Text(
+                         text = stringRes(R.string.clipboard__disabled__message),
+-                        color = itemStyle.foreground.solidColor(),
++                        color = itemStyle.foreground.solidColor(context),
+                         fontSize = itemStyle.fontSize.spSize(),
+                     )
+                     Button(
+@@ -562,13 +562,13 @@ fun ClipboardInputLayout(
+             Text(
+                 modifier = Modifier.padding(top = 24.dp, bottom = 8.dp),
+                 text = stringRes(R.string.clipboard__locked__title),
+-                color = itemStyle.foreground.solidColor(),
++                color = itemStyle.foreground.solidColor(context),
+                 fontSize = itemStyle.fontSize.spSize() safeTimes 1.1f,
+                 fontWeight = FontWeight.Bold,
+             )
+             Text(
+                 text = stringRes(R.string.clipboard__locked__message),
+-                color = itemStyle.foreground.solidColor(),
++                color = itemStyle.foreground.solidColor(context),
+                 fontSize = itemStyle.fontSize.spSize(),
+                 textAlign = TextAlign.Center,
+             )
+@@ -603,13 +603,14 @@ private fun ClipCategoryTitle(
+     style: SnyggPropertySet,
+     modifier: Modifier = Modifier,
+ ) {
++    val context = LocalContext.current
+     Text(
+         modifier = modifier
+             .padding(ItemMargin)
+             .padding(top = 8.dp)
+             .fillMaxWidth(),
+         text = text.uppercase(),
+-        color = style.foreground.solidColor(),
++        color = style.foreground.solidColor(context),
+         fontWeight = FontWeight.Bold,
+         fontSize = style.fontSize.spSize() safeTimes 0.8f,
+     )
+@@ -621,6 +622,7 @@ private fun ClipTextItemDescription(
+     style: SnyggPropertySet,
+     modifier: Modifier = Modifier,
+ ): Unit = with(LocalDensity.current) {
++    val context = LocalContext.current
+     val iconId: Int?
+     val description: String?
+     when {
+@@ -655,12 +657,12 @@ private fun ClipTextItemDescription(
+                     .requiredSize(fontSize.toDp()),
+                 painter = painterResource(id = iconId),
+                 contentDescription = null,
+-                tint = style.foreground.solidColor(),
++                tint = style.foreground.solidColor(context),
+             )
+             Text(
+                 modifier = Modifier.weight(1f),
+                 text = description,
+-                color = style.foreground.solidColor(),
++                color = style.foreground.solidColor(context),
+                 fontSize = fontSize safeTimes 0.8f,
+                 fontStyle = FontStyle.Italic,
+             )
+@@ -676,6 +678,7 @@ private fun PopupAction(
+     modifier: Modifier = Modifier,
+     onClick: () -> Unit,
+ ) {
++    val context = LocalContext.current
+     Row(
+         modifier = modifier
+             .width(ItemWidth)
+@@ -687,12 +690,12 @@ private fun PopupAction(
+             modifier = Modifier.padding(end = 8.dp),
+             painter = painterResource(iconId),
+             contentDescription = null,
+-            tint = style.foreground.solidColor(),
++            tint = style.foreground.solidColor(context),
+         )
+         Text(
+             modifier = Modifier.weight(1f),
+             text = text,
+-            color = style.foreground.solidColor(),
++            color = style.foreground.solidColor(context),
+             fontSize = style.fontSize.spSize(),
+         )
+     }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/media/emoji/EmojiPaletteView.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/media/emoji/EmojiPaletteView.kt
+index e7bf9a0f..a0f5c382 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/media/emoji/EmojiPaletteView.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/media/emoji/EmojiPaletteView.kt
+@@ -154,7 +154,7 @@ fun EmojiPaletteView(
+     val fontSizeMultiplier = prefs.keyboard.fontSizeMultiplier()
+     val emojiKeyStyle = FlorisImeTheme.style.get(element = FlorisImeUi.EmojiKey)
+     val emojiKeyFontSize = emojiKeyStyle.fontSize.spSize(default = EmojiDefaultFontSize) safeTimes fontSizeMultiplier
+-    val contentColor = emojiKeyStyle.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor())
++    val contentColor = emojiKeyStyle.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor())
+ 
+     Column(modifier = modifier) {
+         EmojiCategoriesTabRow(
+@@ -249,11 +249,12 @@ private fun EmojiCategoriesTabRow(
+     activeCategory: EmojiCategory,
+     onCategoryChange: (EmojiCategory) -> Unit,
+ ) {
++    val context = LocalContext.current
+     val inputFeedbackController = LocalInputFeedbackController.current
+     val tabStyle = FlorisImeTheme.style.get(element = FlorisImeUi.EmojiTab)
+     val tabStyleFocused = FlorisImeTheme.style.get(element = FlorisImeUi.EmojiTab, isFocus = true)
+-    val unselectedContentColor = tabStyle.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor())
+-    val selectedContentColor = tabStyleFocused.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor())
++    val unselectedContentColor = tabStyle.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor())
++    val selectedContentColor = tabStyleFocused.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor())
+ 
+     val selectedTabIndex = EmojiCategoryValues.indexOf(activeCategory)
+     TabRow(
+@@ -377,6 +378,7 @@ private fun EmojiVariationsPopup(
+ ) {
+     val popupStyle = FlorisImeTheme.style.get(element = FlorisImeUi.EmojiKeyPopup)
+     val emojiKeyHeight = FlorisImeSizing.smartbarHeight
++    val context = LocalContext.current
+ 
+     if (visible) {
+         Popup(
+@@ -391,8 +393,8 @@ private fun EmojiVariationsPopup(
+                 modifier = Modifier
+                     .widthIn(max = EmojiBaseWidth * 6)
+                     .snyggShadow(popupStyle)
+-                    .snyggBorder(popupStyle)
+-                    .snyggBackground(popupStyle, fallbackColor = FlorisImeTheme.fallbackSurfaceColor()),
++                    .snyggBorder(context, popupStyle)
++                    .snyggBackground(context, popupStyle, fallbackColor = FlorisImeTheme.fallbackSurfaceColor()),
+             ) {
+                 for (emoji in variations) {
+                     Box(
+@@ -408,7 +410,7 @@ private fun EmojiVariationsPopup(
+                             modifier = Modifier.align(Alignment.Center),
+                             text = emoji.value,
+                             emojiCompatInstance = emojiCompatInstance,
+-                            color = popupStyle.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor()),
++                            color = popupStyle.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor()),
+                             fontSize = popupStyle.fontSize.spSize(default = EmojiDefaultFontSize) safeTimes fontSizeMultiplier,
+                         )
+                     }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/onehanded/OneHandedPanel.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/onehanded/OneHandedPanel.kt
+index 91bcf6ba..8995e1d0 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/onehanded/OneHandedPanel.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/onehanded/OneHandedPanel.kt
+@@ -24,6 +24,7 @@ import androidx.compose.material.IconButton
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.res.painterResource
+ import dev.patrickgold.florisboard.R
+ import dev.patrickgold.florisboard.app.florisPreferenceModel
+@@ -43,10 +44,12 @@ fun RowScope.OneHandedPanel(
+     val prefs by florisPreferenceModel()
+     val inputFeedbackController = LocalInputFeedbackController.current
+     val oneHandedPanelStyle = FlorisImeTheme.style.get(FlorisImeUi.OneHandedPanel)
++    val context = LocalContext.current
++
+     Column(
+         modifier = modifier
+             .weight(weight)
+-            .snyggBackground(oneHandedPanelStyle),
++            .snyggBackground(context, oneHandedPanelStyle),
+         horizontalAlignment = Alignment.CenterHorizontally,
+         verticalArrangement = Arrangement.SpaceEvenly,
+     ) {
+@@ -57,7 +60,7 @@ fun RowScope.OneHandedPanel(
+             Icon(
+                 painter = painterResource(R.drawable.ic_zoom_out_map),
+                 contentDescription = stringRes(R.string.one_handed__close_btn_content_description),
+-                tint = oneHandedPanelStyle.foreground.solidColor(),
++                tint = oneHandedPanelStyle.foreground.solidColor(context),
+             )
+         }
+         IconButton(onClick = {
+@@ -79,7 +82,7 @@ fun RowScope.OneHandedPanel(
+                         R.string.one_handed__move_end_btn_content_description
+                     }
+                 ),
+-                tint = oneHandedPanelStyle.foreground.solidColor(),
++                tint = oneHandedPanelStyle.foreground.solidColor(context),
+             )
+         }
+     }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/popup/PopupUi.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/popup/PopupUi.kt
+index e931a2fc..6f85193c 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/popup/PopupUi.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/popup/PopupUi.kt
+@@ -30,6 +30,7 @@ import androidx.compose.material.Text
+ import androidx.compose.runtime.Composable
+ import androidx.compose.ui.Alignment
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.platform.LocalDensity
+ import androidx.compose.ui.res.painterResource
+ import androidx.compose.ui.unit.Dp
+@@ -53,6 +54,8 @@ fun PopupBaseBox(
+     fontSizeMultiplier: Float,
+     shouldIndicateExtendedPopups: Boolean,
+ ): Unit = with(LocalDensity.current) {
++    val context = LocalContext.current
++
+     val popupStyle = FlorisImeTheme.style.get(
+         element = FlorisImeUi.KeyPopup,
+     )
+@@ -72,7 +75,7 @@ fun PopupBaseBox(
+                 Text(
+                     modifier = Modifier.align(Alignment.Center),
+                     text = label,
+-                    color = popupStyle.foreground.solidColor(),
++                    color = popupStyle.foreground.solidColor(context),
+                     fontSize = fontSize,
+                     maxLines = 1,
+                     softWrap = false,
+@@ -86,7 +89,7 @@ fun PopupBaseBox(
+                     .align(Alignment.CenterEnd),
+                 painter = painterResource(R.drawable.ic_more_horiz),
+                 contentDescription = null,
+-                tint = popupStyle.foreground.solidColor(),
++                tint = popupStyle.foreground.solidColor(context),
+             )
+         }
+     }
+@@ -102,6 +105,8 @@ fun PopupExtBox(
+     elemHeight: Dp,
+     activeElementIndex: Int,
+ ): Unit = with(LocalDensity.current) {
++    val context = LocalContext.current
++
+     val popupStyle = FlorisImeTheme.style.get(
+         element = FlorisImeUi.KeyPopup,
+         isFocus = false,
+@@ -109,8 +114,8 @@ fun PopupExtBox(
+     Column(
+         modifier = modifier
+             .snyggShadow(popupStyle)
+-            .snyggBorder(popupStyle)
+-            .snyggBackground(popupStyle),
++            .snyggBorder(context, popupStyle)
++            .snyggBackground(context, popupStyle),
+     ) {
+         for (row in elements.asReversed()) {
+             Row(
+@@ -135,7 +140,7 @@ fun PopupExtBox(
+                             .size(elemWidth, elemHeight)
+                             .run {
+                                 if (activeElementIndex == element.orderedIndex) {
+-                                    snyggBackground(elemStyle)
++                                    snyggBackground(context, elemStyle)
+                                 } else {
+                                     this
+                                 }
+@@ -145,7 +150,7 @@ fun PopupExtBox(
+                             Text(
+                                 modifier = Modifier.align(Alignment.Center),
+                                 text = label,
+-                                color = elemStyle.foreground.solidColor(),
++                                color = elemStyle.foreground.solidColor(context),
+                                 fontSize = elemFontSize,
+                                 maxLines = 1,
+                                 softWrap = false,
+@@ -158,7 +163,7 @@ fun PopupExtBox(
+                                     .align(Alignment.Center),
+                                 painter = painterResource(iconResId),
+                                 contentDescription = null,
+-                                tint = elemStyle.foreground.solidColor(),
++                                tint = elemStyle.foreground.solidColor(context),
+                             )
+                         }
+                     }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/CandidatesRow.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/CandidatesRow.kt
+index eb9031b1..76599ab8 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/CandidatesRow.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/CandidatesRow.kt
+@@ -98,7 +98,7 @@ fun CandidatesRow(modifier: Modifier = Modifier) {
+         Row(
+             modifier = modifier
+                 .fillMaxSize()
+-                .snyggBackground(rowStyle)
++                .snyggBackground(context, rowStyle)
+                 .then(
+                     if (displayMode == CandidatesDisplayMode.DYNAMIC_SCROLLABLE && candidates.size > 1) {
+                         Modifier.florisHorizontalScroll(scrollbarHeight = CandidatesRowScrollbarHeight)
+@@ -139,7 +139,7 @@ fun CandidatesRow(modifier: Modifier = Modifier) {
+                                 .width(1.dp)
+                                 .fillMaxHeight(0.6f)
+                                 .align(Alignment.CenterVertically)
+-                                .snyggBackground(spacerStyle),
++                                .snyggBackground(context, spacerStyle),
+                         )
+                     }
+                     CandidateItem(
+@@ -176,6 +176,7 @@ private fun CandidateItem(
+     onLongPress: () -> Boolean = { false },
+     longPressDelay: Long,
+ ) = with(LocalDensity.current) {
++    val context = LocalContext.current
+     var isPressed by remember { mutableStateOf(false) }
+ 
+     val style = if (candidate is ClipboardSuggestionCandidate) {
+@@ -192,7 +193,7 @@ private fun CandidateItem(
+ 
+     Row(
+         modifier = modifier
+-            .snyggBackground(style)
++            .snyggBackground(context, style)
+             .pointerInput(Unit) {
+                 forEachGesture {
+                     awaitPointerEventScope {
+@@ -233,7 +234,7 @@ private fun CandidateItem(
+                     .padding(end = 4.dp),
+                 painter = painterResource(candidate.iconId!!),
+                 contentDescription = null,
+-                tint = style.foreground.solidColor(),
++                tint = style.foreground.solidColor(context),
+             )
+         }
+         Column(
+@@ -243,7 +244,7 @@ private fun CandidateItem(
+         ) {
+             Text(
+                 text = candidate.text.toString(),
+-                color = style.foreground.solidColor(),
++                color = style.foreground.solidColor(context),
+                 fontSize = style.fontSize.spSize(),
+                 fontWeight = if (candidate.isEligibleForAutoCommit) FontWeight.Bold else FontWeight.Normal,
+                 textAlign = TextAlign.Center,
+@@ -253,7 +254,7 @@ private fun CandidateItem(
+             if (candidate.secondaryText != null) {
+                 Text(
+                     text = candidate.secondaryText!!.toString(),
+-                    color = style.foreground.solidColor(),
++                    color = style.foreground.solidColor(context),
+                     fontSize = style.fontSize.spSize() safeTimes 0.6,
+                     fontWeight = if (candidate.isEligibleForAutoCommit) FontWeight.Bold else FontWeight.Normal,
+                     textAlign = TextAlign.Center,
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/Smartbar.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/Smartbar.kt
+index 0ce2c1e2..fcaed47a 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/Smartbar.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/Smartbar.kt
+@@ -161,8 +161,8 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+                     .fillMaxHeight()
+                     .aspectRatio(1f)
+                     .snyggShadow(primaryActionsToggleStyle)
+-                    .snyggBorder(primaryActionsToggleStyle)
+-                    .snyggBackground(primaryActionsToggleStyle),
++                    .snyggBorder(context, primaryActionsToggleStyle)
++                    .snyggBackground(context, primaryActionsToggleStyle),
+                 contentAlignment = Alignment.Center,
+             ) {
+                 val rotation by animateFloatAsState(
+@@ -181,7 +181,7 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+                         }
+                     ),
+                     contentDescription = null,
+-                    tint = primaryActionsToggleStyle.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor()),
++                    tint = primaryActionsToggleStyle.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor()),
+                 )
+             }
+         }
+@@ -235,8 +235,8 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+                     .fillMaxHeight()
+                     .aspectRatio(1f)
+                     .snyggShadow(secondaryActionsToggleStyle)
+-                    .snyggBorder(secondaryActionsToggleStyle)
+-                    .snyggBackground(secondaryActionsToggleStyle),
++                    .snyggBorder(context, secondaryActionsToggleStyle)
++                    .snyggBackground(context, secondaryActionsToggleStyle),
+                 contentAlignment = Alignment.Center,
+             ) {
+                 val transition = updateTransition(extendedActionsExpanded, label = "smartbarSecondaryRowToggleBtn")
+@@ -249,7 +249,7 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+                         .rotate(rotation),
+                     painter = painterResource(R.drawable.ic_unfold_less),
+                     contentDescription = null,
+-                    tint = secondaryActionsToggleStyle.foreground.solidColor(),
++                    tint = secondaryActionsToggleStyle.foreground.solidColor(context),
+                 )
+                 // Not expanded icon
+                 Icon(
+@@ -258,7 +258,7 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+                         .rotate(rotation - 180f),
+                     painter = painterResource(R.drawable.ic_unfold_more),
+                     contentDescription = null,
+-                    tint = secondaryActionsToggleStyle.foreground.solidColor(),
++                    tint = secondaryActionsToggleStyle.foreground.solidColor(context),
+                 )
+             }
+         }
+@@ -304,7 +304,7 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+         modifier = modifier
+             .fillMaxWidth()
+             .height(FlorisImeSizing.smartbarHeight)
+-            .snyggBackground(smartbarStyle),
++            .snyggBackground(context, smartbarStyle),
+     ) {
+         when (smartbarLayout) {
+             SmartbarLayout.SUGGESTIONS_ONLY -> {
+@@ -341,15 +341,16 @@ private fun SmartbarMainRow(modifier: Modifier = Modifier) {
+ 
+ @Composable
+ private fun SmartbarSecondaryRow(modifier: Modifier = Modifier) {
++    val context = LocalContext.current
+     val prefs by florisPreferenceModel()
+     val smartbarLayout by prefs.smartbar.layout.observeAsState()
+     val secondaryRowStyle = FlorisImeTheme.style.get(FlorisImeUi.SmartbarExtendedActionsRow)
+     val extendedActionsExpanded by prefs.smartbar.extendedActionsExpanded.observeAsState()
+     val extendedActionsPlacement by prefs.smartbar.extendedActionsPlacement.observeAsState()
+-    val background = secondaryRowStyle.background.solidColor().let { color ->
++    val background = secondaryRowStyle.background.solidColor(context).let { color ->
+         if (extendedActionsPlacement == ExtendedActionsPlacement.OVERLAY_APP_UI) {
+             if (color.isUnspecified || color.alpha == 0f) {
+-                FlorisImeTheme.style.get(FlorisImeUi.Keyboard).background.solidColor(default = Color.Black)
++                FlorisImeTheme.style.get(FlorisImeUi.Keyboard).background.solidColor(context, default = Color.Black)
+             } else {
+                 color
+             }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionButton.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionButton.kt
+index 34bd99d6..0edda908 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionButton.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionButton.kt
+@@ -107,12 +107,12 @@ fun QuickActionButton(
+     val actionStyle = if (isPressed) actionStylePressed else actionStyleNotPressed
+     val bgColor by animateColorAsState(
+         targetValue = if (isPressed) {
+-            actionStylePressed.background.solidColor()
++            actionStylePressed.background.solidColor(context)
+         } else {
+-            if (actionStyleNotPressed.background.solidColor().alpha == 0f) {
+-                actionStylePressed.background.solidColor().copy(0f)
++            if (actionStyleNotPressed.background.solidColor(context).alpha == 0f) {
++                actionStylePressed.background.solidColor(context).copy(0f)
+             } else {
+-                actionStyleNotPressed.background.solidColor()
++                actionStyleNotPressed.background.solidColor(context)
+             }
+         },
+         animationSpec = BackgroundAnimationSpec,
+@@ -122,7 +122,7 @@ fun QuickActionButton(
+             DebugHelperColor
+         }
+         else -> {
+-            actionStyle.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor())
++            actionStyle.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor())
+         }
+     }
+     val fgAlpha = if (action.keyData().code == KeyCode.NOOP) 0.5f else 1f
+@@ -148,7 +148,7 @@ fun QuickActionButton(
+             .aspectRatio(1f)
+             .alpha(fgAlpha)
+             .snyggShadow(actionStyle)
+-            .snyggBorder(actionStyle)
++            .snyggBorder(context, actionStyle)
+             .background(bgColor, actionStyle.shape.shape())
+             .snyggClip(actionStyle)
+             .indication(interactionSource, LocalIndication.current)
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsEditorPanel.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsEditorPanel.kt
+index 071c46bf..0ff82de8 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsEditorPanel.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsEditorPanel.kt
+@@ -249,13 +249,13 @@ fun QuickActionsEditorPanel(modifier: Modifier = Modifier) {
+ 
+     Column(
+         modifier = modifier
+-            .snyggBackground(panelStyle, fallbackColor = FlorisImeTheme.fallbackSurfaceColor())
++            .snyggBackground(context, panelStyle, fallbackColor = FlorisImeTheme.fallbackSurfaceColor())
+             .snyggClip(panelStyle),
+     ) {
+         Row(
+             modifier = Modifier
+                 .fillMaxWidth()
+-                .snyggBackground(headerStyle),
++                .snyggBackground(context, headerStyle),
+             verticalAlignment = Alignment.CenterVertically,
+         ) {
+             FlorisIconButton(
+@@ -263,12 +263,12 @@ fun QuickActionsEditorPanel(modifier: Modifier = Modifier) {
+                     keyboardManager.activeState.isActionsEditorVisible = false
+                 },
+                 icon = painterResource(R.drawable.ic_keyboard_arrow_left),
+-                iconColor = headerStyle.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor()),
++                iconColor = headerStyle.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor()),
+             )
+             Text(
+                 modifier = Modifier.weight(1f),
+                 text = stringRes(R.string.quick_actions_editor__header),
+-                color = headerStyle.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor()),
++                color = headerStyle.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor()),
+                 fontSize = headerStyle.fontSize.spSize(),
+                 textAlign = TextAlign.Center,
+             )
+@@ -359,12 +359,13 @@ private fun Subheader(
+     style: SnyggPropertySet,
+     modifier: Modifier = Modifier,
+ ) {
++    val context = LocalContext.current
+     Text(
+         modifier = modifier
+             .fillMaxWidth()
+             .padding(top = 16.dp, bottom = 8.dp, start = 16.dp, end = 16.dp),
+         text = text,
+-        color = style.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor()),
++        color = style.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor()),
+         fontWeight = FontWeight.Bold,
+         fontSize = style.fontSize.spSize() safeTimes 0.8f,
+     )
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsOverflowPanel.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsOverflowPanel.kt
+index 39309908..e31152e1 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsOverflowPanel.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsOverflowPanel.kt
+@@ -70,7 +70,7 @@ fun QuickActionsOverflowPanel() {
+         modifier = Modifier
+             .fillMaxWidth()
+             .height(FlorisImeSizing.keyboardUiHeight())
+-            .snyggBackground(panelStyle),
++            .snyggBackground(context, panelStyle),
+     ) {
+         LazyVerticalGrid(
+             modifier = Modifier
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsRow.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsRow.kt
+index 978812f7..810c677a 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsRow.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/smartbar/quickaction/QuickActionsRow.kt
+@@ -88,7 +88,7 @@ fun QuickActionsRow(
+         Row(
+             modifier = Modifier
+                 .fillMaxSize()
+-                .snyggBackground(rowStyle),
++                .snyggBackground(context, rowStyle),
+             verticalAlignment = Alignment.CenterVertically,
+             horizontalArrangement = Arrangement.SpaceEvenly,
+         ) {
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/TextInputLayout.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/TextInputLayout.kt
+index ca23815c..e266c8f9 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/TextInputLayout.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/TextInputLayout.kt
+@@ -72,7 +72,7 @@ fun TextInputLayout(
+                             painter = painterResource(R.drawable.ic_incognito),
+                             contentDescription = null,
+                             tint = indicatorStyle.foreground.solidColor(
+-                                default = FlorisImeTheme.fallbackContentColor().copy(alpha = 0.067f),
++                                context, default = FlorisImeTheme.fallbackContentColor().copy(alpha = 0.067f),
+                             ),
+                         )
+                     }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/keyboard/TextKeyboardLayout.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/keyboard/TextKeyboardLayout.kt
+index 9ea33d78..8cdcde1f 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/keyboard/TextKeyboardLayout.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/text/keyboard/TextKeyboardLayout.kt
+@@ -120,7 +120,7 @@ fun TextKeyboardLayout(
+         evaluator.state.keyVariation != KeyVariation.PASSWORD
+     val glideShowTrail by prefs.glide.showTrail.observeAsState()
+     val glideTrailColor = FlorisImeTheme.style.get(element = FlorisImeUi.GlideTrail)
+-        .foreground.solidColor(default = Color.Green)
++        .foreground.solidColor(context, default = Color.Green)
+ 
+     val controller = remember { TextKeyboardLayoutController(context) }.also {
+         it.keyboard = keyboard
+@@ -332,6 +332,8 @@ private fun TextKeyButton(
+     isSmartbarKey: Boolean,
+     debugShowTouchBoundaries: Boolean,
+ ) = with(LocalDensity.current) {
++    val context = LocalContext.current
++
+     val keyStyle = FlorisImeTheme.style.get(
+         element = if (isSmartbarKey) FlorisImeUi.SmartbarActionKey else FlorisImeUi.Key,
+         code = key.computedData.code,
+@@ -383,7 +385,7 @@ private fun TextKeyButton(
+                     .wrapContentSize()
+                     .align(if (isTelpadKey) BiasAlignment(-0.5f, 0f) else Alignment.Center),
+                 text = label,
+-                color = keyStyle.foreground.solidColor(),
++                color = keyStyle.foreground.solidColor(context),
+                 fontSize = fontSize,
+                 maxLines = if (key.computedData.code == KeyCode.VIEW_NUMERIC_ADVANCED) 2 else 1,
+                 softWrap = key.computedData.code == KeyCode.VIEW_NUMERIC_ADVANCED,
+@@ -405,10 +407,10 @@ private fun TextKeyButton(
+                 modifier = Modifier
+                     .wrapContentSize()
+                     .align(if (isTelpadKey) BiasAlignment(0.5f, 0f) else Alignment.TopEnd)
+-                    .snyggBackground(keyHintStyle)
++                    .snyggBackground(context, keyHintStyle)
+                     .padding(horizontal = (key.visibleBounds.width / 12f).toDp()),
+                 text = hintedLabel,
+-                color = keyHintStyle.foreground.solidColor(),
++                color = keyHintStyle.foreground.solidColor(context),
+                 fontFamily = FontFamily.Monospace,
+                 fontSize = hintFontSize,
+                 maxLines = 1,
+@@ -423,7 +425,7 @@ private fun TextKeyButton(
+                     .align(Alignment.Center),
+                 painter = painterResource(drawableId),
+                 contentDescription = null,
+-                tint = keyStyle.foreground.solidColor(),
++                tint = keyStyle.foreground.solidColor(context),
+             )
+         }
+     }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt
+index 2d3e37d5..973d4b42 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/FlorisImeUiSpec.kt
+@@ -24,6 +24,7 @@ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCircleShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCutCornerDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggCutCornerPercentShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDpSizeValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouLightColorValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRectangleShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRoundedCornerDpShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggRoundedCornerPercentShapeValue
+@@ -34,21 +35,21 @@ fun SnyggPropertySetSpecBuilder.background() {
+     property(
+         name = Snygg.Background,
+         level = SnyggLevel.BASIC,
+-        supportedValues(SnyggSolidColorValue),
++        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue),
+     )
+ }
+ fun SnyggPropertySetSpecBuilder.foreground() {
+     property(
+         name = Snygg.Foreground,
+         level = SnyggLevel.BASIC,
+-        supportedValues(SnyggSolidColorValue),
++        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue),
+     )
+ }
+ fun SnyggPropertySetSpecBuilder.border() {
+     property(
+         name = Snygg.BorderColor,
+         level = SnyggLevel.ADVANCED,
+-        supportedValues(SnyggSolidColorValue),
++        supportedValues(SnyggSolidColorValue, SnyggMaterialYouLightColorValue),
+     )
+     property(
+         name = Snygg.BorderWidth,
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/ThemeManager.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/ThemeManager.kt
+index cd7e4691..ef6b35a5 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/ThemeManager.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/ime/theme/ThemeManager.kt
+@@ -199,8 +199,8 @@ class ThemeManager(context: Context) {
+         style: SnyggStylesheet = activeThemeInfo.value?.stylesheet ?: FlorisImeThemeBaseStyle,
+     ): Bundle {
+         val chipStyle = style.getStatic(FlorisImeUi.SmartbarSharedActionsToggle)
+-        val bgColor = chipStyle.background.solidColor()
+-        val fgColor = chipStyle.foreground.solidColor()
++        val bgColor = chipStyle.background.solidColor(context)
++        val fgColor = chipStyle.foreground.solidColor(context)
+         val bgDrawableId = R.drawable.autofill_inline_suggestion_chip_background
+         val stylesBuilder = UiVersions.newStylesBuilder()
+         val suggestionStyle = InlineSuggestionUi.newStyleBuilder()
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/compose/SystemUi.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/compose/SystemUi.kt
+index de4ececa..cf2049b3 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/compose/SystemUi.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/compose/SystemUi.kt
+@@ -28,6 +28,7 @@ import androidx.compose.runtime.SideEffect
+ import androidx.compose.runtime.remember
+ import androidx.compose.ui.graphics.Color
+ import androidx.compose.ui.graphics.toArgb
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.platform.LocalView
+ import androidx.core.view.ViewCompat
+ import androidx.core.view.WindowInsetsCompat
+@@ -62,7 +63,8 @@ fun SystemUiApp() {
+ fun SystemUiIme() {
+     val systemUiController = rememberFlorisSystemUiController()
+     val useDarkIcons = !FlorisImeTheme.config.isNightTheme
+-    val backgroundColor = FlorisImeTheme.style.get(FlorisImeUi.SystemNavBar).background.solidColor()
++    val context = LocalContext.current
++    val backgroundColor = FlorisImeTheme.style.get(FlorisImeUi.SystemNavBar).background.solidColor(context)
+ 
+     SideEffect {
+         systemUiController.setStatusBarColor(
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggButton.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggButton.kt
+index f9c03a47..94b5e7bc 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggButton.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggButton.kt
+@@ -28,6 +28,7 @@ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.remember
+ import androidx.compose.ui.Modifier
+ import androidx.compose.ui.graphics.painter.Painter
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.unit.dp
+ import dev.patrickgold.florisboard.ime.theme.FlorisImeTheme
+ import dev.patrickgold.florisboard.lib.snygg.SnyggPropertySet
+@@ -42,8 +43,9 @@ fun SnyggButton(
+     enabled: Boolean = true,
+     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
+ ) {
++    val context = LocalContext.current
+     val border = remember (style) {
+-        BorderStroke(style.borderWidth.dpSize(default = 0.dp), style.borderColor.solidColor())
++        BorderStroke(style.borderWidth.dpSize(default = 0.dp), style.borderColor.solidColor(context))
+     }
+     val elevation = style.shadowElevation.dpSize(default = 0.dp)
+     Button(
+@@ -59,8 +61,8 @@ fun SnyggButton(
+         shape = style.shape.shape(),
+         border = border,
+         colors = ButtonDefaults.buttonColors(
+-            backgroundColor = style.background.solidColor(default = FlorisImeTheme.fallbackContentColor()),
+-            contentColor = style.foreground.solidColor(default = FlorisImeTheme.fallbackSurfaceColor()),
++            backgroundColor = style.background.solidColor(context, default = FlorisImeTheme.fallbackContentColor()),
++            contentColor = style.foreground.solidColor(context, default = FlorisImeTheme.fallbackSurfaceColor()),
+         ),
+         contentPadding = contentPadding,
+         onClick = onClick,
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggModifiers.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggModifiers.kt
+index 7616fb46..174b7cec 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggModifiers.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggModifiers.kt
+@@ -16,6 +16,7 @@
+ 
+ package dev.patrickgold.florisboard.lib.snygg.ui
+ 
++import android.content.Context
+ import androidx.compose.foundation.background
+ import androidx.compose.foundation.border
+ import androidx.compose.ui.Modifier
+@@ -31,12 +32,15 @@ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.takeOrElse
+ import dev.patrickgold.florisboard.lib.snygg.SnyggPropertySet
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggDpSizeValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouLightColorValue
++import dev.patrickgold.florisboard.lib.snygg.value.SnyggMaterialYouValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggShapeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggSolidColorValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggSpSizeValue
+ import dev.patrickgold.florisboard.lib.snygg.value.SnyggValue
+ 
+ fun Modifier.snyggBackground(
++    context: Context,
+     style: SnyggPropertySet,
+     fallbackColor: Color = Color.Unspecified,
+     shape: Shape = style.shape.shape(),
+@@ -46,6 +50,12 @@ fun Modifier.snyggBackground(
+             color = bg.color,
+             shape = shape,
+         )
++
++        is SnyggMaterialYouValue -> this.background(
++            color = bg.loadColor(context),
++            shape = shape,
++        )
++
+         else -> if (fallbackColor.isSpecified) {
+             this.background(
+                 color = fallbackColor,
+@@ -58,9 +68,10 @@ fun Modifier.snyggBackground(
+ }
+ 
+ fun Modifier.snyggBorder(
++    context: Context,
+     style: SnyggPropertySet,
+     width: Dp = style.borderWidth.dpSize().takeOrElse { 0.dp }.coerceAtLeast(0.dp),
+-    color: Color = style.borderColor.solidColor(default = Color.Unspecified),
++    color: Color = style.borderColor.solidColor(context, default = Color.Unspecified),
+     shape: Shape = style.shape.shape(),
+ ): Modifier {
+     return if (color.isSpecified) {
+@@ -86,9 +97,10 @@ fun Modifier.snyggShadow(
+     return this.shadow(elevation, shape, clip = false)
+ }
+ 
+-fun SnyggValue.solidColor(default: Color = Color.Transparent): Color {
++fun SnyggValue.solidColor(context: Context, default: Color = Color.Transparent): Color {
+     return when (this) {
+         is SnyggSolidColorValue -> this.color
++        is SnyggMaterialYouValue -> this.loadColor(context)
+         else -> default
+     }
+ }
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggSurface.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggSurface.kt
+index f78794ba..1d949e23 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggSurface.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/ui/SnyggSurface.kt
+@@ -25,6 +25,7 @@ import androidx.compose.material.LocalContentColor
+ import androidx.compose.runtime.Composable
+ import androidx.compose.runtime.CompositionLocalProvider
+ import androidx.compose.ui.Modifier
++import androidx.compose.ui.platform.LocalContext
+ import androidx.compose.ui.unit.dp
+ import androidx.compose.ui.unit.takeOrElse
+ import dev.patrickgold.florisboard.ime.theme.FlorisImeTheme
+@@ -41,8 +42,9 @@ fun SnyggSurface(
+     clickAndSemanticsModifier: Modifier = Modifier,
+     content: @Composable BoxScope.() -> Unit,
+ ) {
++    val context = LocalContext.current
+     val elevationDp = style.shadowElevation.dpSize().takeOrElse { 0.dp }.coerceAtLeast(0.dp)
+-    val contentColor = style.foreground.solidColor(default = FlorisImeTheme.fallbackContentColor())
++    val contentColor = style.foreground.solidColor(context, default = FlorisImeTheme.fallbackContentColor())
+     val absoluteElevation = LocalAbsoluteElevation.current + elevationDp
+     CompositionLocalProvider(
+         LocalContentColor provides contentColor,
+@@ -51,9 +53,9 @@ fun SnyggSurface(
+         Box(
+             modifier = modifier
+                 .snyggShadow(style)
+-                .snyggBorder(style)
++                .snyggBorder(context, style)
+                 .then(if (clip) Modifier.snyggClip(style) else Modifier)
+-                .snyggBackground(style)
++                .snyggBackground(context, style)
+                 .then(clickAndSemanticsModifier)
+                 .padding(contentPadding),
+             propagateMinConstraints = false,
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/value/SnyggMaterialYouValue.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/value/SnyggMaterialYouValue.kt
+new file mode 100644
+index 00000000..c2f67545
+--- /dev/null
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/value/SnyggMaterialYouValue.kt
+@@ -0,0 +1,209 @@
++/*
++ * Copyright (C) 2021 Patrick Goldinger
++ *
++ * Licensed under the Apache License, Version 2.0 (the "License");
++ * you may not use this file except in compliance with the License.
++ * You may obtain a copy of the License at
++ *
++ * http://www.apache.org/licenses/LICENSE-2.0
++ *
++ * Unless required by applicable law or agreed to in writing, software
++ * distributed under the License is distributed on an "AS IS" BASIS,
++ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ * See the License for the specific language governing permissions and
++ * limitations under the License.
++ */
++
++package dev.patrickgold.florisboard.lib.snygg.value
++
++import android.content.Context
++import androidx.compose.material3.ColorScheme
++import androidx.compose.material3.dynamicDarkColorScheme
++import androidx.compose.material3.dynamicLightColorScheme
++import androidx.compose.ui.graphics.Color
++import dev.patrickgold.florisboard.lib.snygg.value.MaterialYouColor.ColorName
++import dev.patrickgold.florisboard.lib.snygg.value.MaterialYouColor.ColorNameId
++import dev.patrickgold.florisboard.lib.snygg.value.MaterialYouColor.primary
++
++sealed interface SnyggMaterialYouValue : SnyggValue {
++    val colorName: String
++    val dark: Boolean
++
++    fun loadColor(context: Context) = MaterialYouColor.loadColor(context, colorName, dark)
++}
++
++sealed interface SnyggMaterialYouValueEncoder<T : SnyggMaterialYouValue> : SnyggValueEncoder {
++    val clazz: Class<T>
++
++    override val spec: SnyggValueSpec
++        get() = SnyggValueSpec {
++            function(name = "color-name") {
++                commaList {
++                    +string(id = ColorNameId, regex = ColorName)
++                }
++            }
++        }
++
++    override fun defaultValue() = newInstance(primary)
++
++    override fun serialize(v: SnyggValue) = runCatching<String> {
++        require(v::class.java == clazz)
++
++        val map = SnyggIdToValueMap.new(ColorNameId to (v as SnyggMaterialYouValue).colorName)
++        return@runCatching spec.pack(map)
++    }
++
++    override fun deserialize(v: String) = runCatching<SnyggValue> {
++        val map = SnyggIdToValueMap.new()
++        spec.parse(v, map)
++
++        return@runCatching newInstance(map.getOrThrow<String>(ColorNameId))
++    }
++
++    fun newInstance(colorName: String): T
++}
++
++object MaterialYouColor {
++    const val ColorNameId = "name"
++    val ColorName = """^\w*$""".toRegex()
++
++    private lateinit var lightColorScheme: ColorScheme
++    private lateinit var darkColorScheme: ColorScheme
++
++    private fun getAndCacheColorScheme(context: Context, dark: Boolean): ColorScheme {
++        return if (dark) {
++            if (!this::darkColorScheme.isInitialized) {
++                darkColorScheme = dynamicDarkColorScheme(context)
++            }
++
++            darkColorScheme
++        } else {
++            if (!this::lightColorScheme.isInitialized) {
++                lightColorScheme = dynamicLightColorScheme(context)
++            }
++
++            lightColorScheme
++        }
++    }
++
++    const val primary = "primary"
++    private const val onPrimary = "onPrimary"
++    private const val primaryContainer = "primaryContainer"
++    private const val onPrimaryContainer = "onPrimaryContainer"
++    private const val inversePrimary = "inversePrimary"
++    private const val secondary = "secondary"
++    private const val onSecondary = "onSecondary"
++    private const val secondaryContainer = "secondaryContainer"
++    private const val onSecondaryContainer = "onSecondaryContainer"
++    private const val tertiary = "tertiary"
++    private const val onTertiary = "onTertiary"
++    private const val tertiaryContainer = "tertiaryContainer"
++    private const val onTertiaryContainer = "onTertiaryContainer"
++    private const val background = "background"
++    private const val onBackground = "onBackground"
++    private const val surface = "surface"
++    private const val onSurface = "onSurface"
++    private const val surfaceVariant = "surfaceVariant"
++    private const val onSurfaceVariant = "onSurfaceVariant"
++    private const val surfaceTint = "surfaceTint"
++    private const val inverseSurface = "inverseSurface"
++    private const val inverseOnSurface = "inverseOnSurface"
++    private const val error = "error"
++    private const val onError = "onError"
++    private const val errorContainer = "errorContainer"
++    private const val onErrorContainer = "onErrorContainer"
++    private const val outline = "outline"
++    private const val outlineVariant = "outlineVariant"
++    private const val scrim = "scrim"
++
++    val colorNames = listOf(
++        primary,
++        onPrimary,
++        primaryContainer,
++        onPrimaryContainer,
++        inversePrimary,
++        secondary,
++        onSecondary,
++        secondaryContainer,
++        onSecondaryContainer,
++        tertiary,
++        onTertiary,
++        tertiaryContainer,
++        onTertiaryContainer,
++        background,
++        onBackground,
++        surface,
++        onSurface,
++        surfaceVariant,
++        onSurfaceVariant,
++        surfaceTint,
++        inverseSurface,
++        inverseOnSurface,
++        error,
++        onError,
++        errorContainer,
++        onErrorContainer,
++        outline,
++        outlineVariant,
++        scrim
++    )
++
++    fun loadColor(context: Context, colorName: String, dark: Boolean): Color {
++        val colorScheme = getAndCacheColorScheme(context, dark)
++
++        return when (colorName) {
++            primary -> colorScheme.primary
++            onPrimary -> colorScheme.onPrimary
++            primaryContainer -> colorScheme.primaryContainer
++            onPrimaryContainer -> colorScheme.onPrimaryContainer
++            inversePrimary -> colorScheme.inversePrimary
++            secondary -> colorScheme.secondary
++            onSecondary -> colorScheme.onSecondary
++            secondaryContainer -> colorScheme.secondaryContainer
++            onSecondaryContainer -> colorScheme.onSecondaryContainer
++            tertiary -> colorScheme.tertiary
++            onTertiary -> colorScheme.onTertiary
++            tertiaryContainer -> colorScheme.tertiaryContainer
++            onTertiaryContainer -> colorScheme.onTertiaryContainer
++            background -> colorScheme.background
++            onBackground -> colorScheme.onBackground
++            surface -> colorScheme.surface
++            onSurface -> colorScheme.onSurface
++            surfaceVariant -> colorScheme.surfaceVariant
++            onSurfaceVariant -> colorScheme.onSurfaceVariant
++            surfaceTint -> colorScheme.surfaceTint
++            inverseSurface -> colorScheme.inverseSurface
++            inverseOnSurface -> colorScheme.inverseOnSurface
++            error -> colorScheme.error
++            onError -> colorScheme.onError
++            errorContainer -> colorScheme.errorContainer
++            onErrorContainer -> colorScheme.onErrorContainer
++            outline -> colorScheme.outline
++            outlineVariant -> colorScheme.outlineVariant
++            scrim -> colorScheme.scrim
++            else -> colorScheme.primary
++        }
++    }
++}
++
++data class SnyggMaterialYouLightColorValue(override val colorName: String, override val dark: Boolean = false) : SnyggMaterialYouValue {
++
++    companion object : SnyggMaterialYouValueEncoder<SnyggMaterialYouLightColorValue> {
++        override val clazz = SnyggMaterialYouLightColorValue::class.java
++
++        override fun newInstance(colorName: String) = SnyggMaterialYouLightColorValue(colorName)
++    }
++
++    override fun encoder() = Companion
++}
++
++data class SnyggMaterialYouDarkColorValue(override val colorName: String, override val dark: Boolean = true) : SnyggMaterialYouValue {
++
++    companion object : SnyggMaterialYouValueEncoder<SnyggMaterialYouDarkColorValue> {
++        override val clazz = SnyggMaterialYouDarkColorValue::class.java
++
++        override fun newInstance(colorName: String) = SnyggMaterialYouDarkColorValue(colorName)
++    }
++
++    override fun encoder() = Companion
++}
+diff --git a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/value/SnyggValue.kt b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/value/SnyggValue.kt
+index 1d9604ed..f6bcb5fc 100644
+--- a/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/value/SnyggValue.kt
++++ b/app/src/main/kotlin/dev/patrickgold/florisboard/lib/snygg/value/SnyggValue.kt
+@@ -16,6 +16,8 @@
+ 
+ package dev.patrickgold.florisboard.lib.snygg.value
+ 
++import android.os.Build
++
+ /**
+  * SnyggValue is the base interface for all possible property values a Snygg stylesheet can hold. In general, a Snygg
+  * value can be one specific type of value (e.g. a color, a keyword describing a behavior, shape, etc.).
+@@ -105,8 +107,12 @@ object SnyggImplicitInheritValue : SnyggValue, SnyggValueEncoder {
+     override fun encoder() = this
+ }
+ 
+-val SnyggVarValueEncoders = listOf(
++val isSOrAbove = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
++
++val SnyggVarValueEncoders = listOfNotNull(
+     SnyggSolidColorValue,
++    if (isSOrAbove) SnyggMaterialYouLightColorValue else null,
++    if (isSOrAbove) SnyggMaterialYouDarkColorValue else null,
+     //SnyggImageRefValue,
+     SnyggRectangleShapeValue,
+     SnyggCircleShapeValue,
+diff --git a/app/src/main/res/values/strings.xml b/app/src/main/res/values/strings.xml
+index 76fd3415..0f85ed45 100644
+--- a/app/src/main/res/values/strings.xml
++++ b/app/src/main/res/values/strings.xml
+@@ -254,6 +254,8 @@
+     <string name="snygg__property_name__var_shape_variant">Common shape (variant)</string>
+     <string name="snygg__property_value__explicit_inherit">Inherit</string>
+     <string name="snygg__property_value__solid_color">Solid color</string>
++    <string name="snygg__property_value__material_you_light_color">Material You color (Light)</string>
++    <string name="snygg__property_value__material_you_dark_color">Material You color (Dark)</string>
+     <string name="snygg__property_value__image_ref">Image reference</string>
+     <string name="snygg__property_value__rectangle_shape">Rectangle shape</string>
+     <string name="snygg__property_value__circle_shape">Circle shape</string>
+diff --git a/gradle/libs.versions.toml b/gradle/libs.versions.toml
+index 00881546..82248594 100644
+--- a/gradle/libs.versions.toml
++++ b/gradle/libs.versions.toml
+@@ -6,6 +6,7 @@ androidx-activity = "1.5.1"
+ androidx-autofill = "1.1.0"
+ androidx-collection = "1.2.0"
+ androidx-compose = "1.4.3"
++androidx-compose-material3 = "1.1.0-rc01"
+ androidx-compose-compiler = "1.4.7"
+ androidx-core = "1.10.0"
+ androidx-core-splashscreen = "1.0.0"
+@@ -41,6 +42,7 @@ androidx-activity-ktx = { module = "androidx.activity:activity-ktx", version.ref
+ androidx-autofill = { module = "androidx.autofill:autofill", version.ref = "androidx-autofill" }
+ androidx-collection-ktx = { module = "androidx.collection:collection-ktx", version.ref = "androidx-collection" }
+ androidx-compose-material = { module = "androidx.compose.material:material", version.ref = "androidx-compose" }
++androidx-compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "androidx-compose-material3" }
+ androidx-compose-runtime-livedata = { module = "androidx.compose.runtime:runtime-livedata", version.ref = "androidx-compose" }
+ androidx-compose-ui = { module = "androidx.compose.ui:ui", version.ref = "androidx-compose" }
+ androidx-compose-ui-tooling-preview = { module = "androidx.compose.ui:ui-tooling-preview", version.ref = "androidx-compose" }
+-- 
+2.41.0
+
