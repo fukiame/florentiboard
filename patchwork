@@ -17,10 +17,11 @@ case "$1" in
         scripts/mergeUpstream.sh $upstream || exit 1
     ;;
     "b" | "build")
-        (git submodule update --init --recursive
+        (git submodule update --init
 	scripts/applyPatches.sh $upstream $downstream $upstream_branch
         cd $downstream
         # build commands here
+        git submodule update --init --recursive
         ./gradlew clean && ./gradlew assembleDebug
         cd ..) || exit 1
     ;;
